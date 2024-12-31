@@ -1,3 +1,8 @@
+<div align="center">
+<h3>rofi-wifi</h3>
+</div>
+<div align="center">Simple script that creates a rofi menu to connect/disconnect networks</div>
+
 ## Installation 
 1. Install dependencies: iwctl, nmcli, rofi
 2. clone repository
