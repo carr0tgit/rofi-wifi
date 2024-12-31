@@ -1,7 +1,7 @@
 <div align="center">
 <h3>rofi-wifi</h3>
 </div>
-<div align="center">Simple script that creates a rofi menu to connect/disconnect wi-fi</div>
+<div align="center">Simple script that creates a rofi menu to connect/disconnect wifi</div>
 
 ## Installation 
 1. Install dependencies: iwctl, nmcli, rofi
