@@ -4,3 +4,6 @@
 3. cd rofi-wifi
 4. ./rofi-wifi
 5. Add script to $PATH for easy access
+
+## Inspiration
+https://github.com/nickclyde/rofi-bluetooth
