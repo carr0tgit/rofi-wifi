@@ -1,0 +1,237 @@
+#!/usr/bin/env bash
+#
+# Author: carrypott3r
+#
+# A script that generates a rofi menu that uses iwctl (iwd) and nmcli to
+# connect to wireless networks and display status info.
+#
+# Inspired by rofi-bluetooth (https://github.com/nickclyde/rofi-bluetooth)
+#
+# Depends on:
+#   Arch repositories: rofi, iwd, iwctl, nmcli
+
+# Constants
+divider="---------"
+goback="Back"
+
+# Checks if wireless interface is powered on
+power_on() {
+    if iwctl device list | grep -q "off"; then
+        return 1
+    else
+        return 0
+    fi
+}
+
+# Toggles power state
+toggle_power() {
+    if power_on; then
+        iwctl device wlan0 set-property Powered off
+        show_menu
+    else
+        iwctl device wlan0 set-property Powered on
+        show_menu
+    fi
+}
+
+# Checks if interface is scanning for networks
+scan_on() {
+    if iwctl station wlan0 show | grep -q "yes"; then
+        echo "Scan: on"
+        return 0
+    else
+        echo "Scan: off"
+        return 1
+    fi
+}
+
+# Toggles scanning state
+toggle_scan() {
+    if scan_on; then
+        iwctl station wlan0 scan cancel
+        show_menu
+    else
+        iwctl station wlan0 scan
+        echo "Scanning..."
+        sleep 5
+        show_menu
+    fi
+}
+
+# Checks if interface is able to connect to networks
+connectable_on() {
+    if iwctl station wlan0 show | grep -q "State                 connected"; then
+        echo "Connectable: no"
+        return 0
+    else
+        echo "Connectable: yes"
+        return 1
+    fi
+}
+
+# Prompt for password if the network is secured
+prompt_for_password() {
+    password=$(rofi -dmenu -p "Enter password for $1" -password)
+    if [ -n "$password" ]; then
+        iwctl --passphrase "$password" station wlan0 connect "$1"
+        show_menu
+    else
+        show_menu
+    fi
+}
+
+# Toggles connectable state
+toggle_connectable() {
+    if connectable_on; then
+        iwctl station wlan0 disconnect
+        show_menu
+    else
+	if [ "$2" == "yes" ]; then
+		if iwctl known-networks list | grep -q "$1"; then
+			iwctl station wlan0 connect "$1"
+		else
+			prompt_for_password "$1"
+		fi
+	else
+        	iwctl station wlan0 connect "$1"
+        	show_menu
+	fi
+    fi
+}
+
+# Prints a short string with the current network status
+# Useful for status bars like polybar, etc.
+print_status() {
+    if power_on; then
+        printf ''
+
+        # Get connected network information
+        network=$(iwctl station wlan0 show | grep "Connected network" | cut -d ' ' -f 2)
+        if [ -n "$network" ]; then
+            printf " Connected to: %s" "$network"
+        else
+            echo " No connection"
+        fi
+        printf "\n"
+    else
+        echo "睊"
+    fi
+}
+
+# A submenu for a specific network that allows connecting
+network_menu() {
+    network=$1
+
+    # Check if the network is secured (password required)
+    #is_secure=$(nmcli -g 802-11-wireless-security "device wifi" | grep -q '.*' && echo "yes" || echo "no")
+    #is_secure=$(nmcli -g 802-11-wireless-security device wifi | grep -E 'WPA|WEP|WPA2' > /dev/null && echo "yes" || echo "no")
+    is_secure=$(nmcli -g SECURITY device wifi | grep -E 'WPA|WEP|WPA2' > /dev/null && echo "yes" || echo "no")
+
+
+
+    # Build options for connecting to a network
+    connected=$(iwctl station wlan0 show | grep -q "$network" && echo "Connected: yes" || echo "Connected: no")
+    options="$connected\n$divider\n$goback\nExit"
+
+    # Open rofi menu, read chosen option
+    chosen="$(echo -e "$options" | $rofi_command "$network")"
+
+    # Match chosen option to command
+    case "$chosen" in
+        "" | "$divider")
+            echo "No option chosen."
+            ;;
+        "$connected")
+	    echo "$network"
+            toggle_connectable "$network" "$is_secure"
+            ;;
+        "$goback")
+            show_menu
+            ;;
+	*)
+            if [ "$is_secure" == "yes" ]; then
+                prompt_for_password "$network"
+            else
+                iwctl station wlan0 connect "$network"
+                show_menu
+            fi
+            ;;
+    esac
+}
+
+# Opens a rofi menu with current network status and options to connect
+show_menu() {
+    # Get menu options
+    if power_on; then
+        power="Power: on"
+	
+	# Get connected network information
+        #connected_network=$(iwctl station wlan0 show | grep "Connected network" | cut -d ' ' -f 2)
+        connected_network=$(iwctl station wlan0 show | grep "Connected network" | awk '{print substr($0, index($0,$3))}')
+	if [ -n "$connected_network" ]; then
+            connected="Connected: $connected_network"
+        else
+            connected=""
+        fi
+
+        # Get available networks
+        #networks=$(iwctl station wlan0 get-networks | grep -E '^\S' | cut -d ' ' -f 1)
+	networks=$(nmcli -f SSID device wifi | grep -v "^--" | grep -v "^SSID" | sed 's/[[:space:]]*$//' | sort | uniq)
+	#networks=$(iwctl station wlan0 get-networks | awk 'NR>4 {print $1}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+
+        # Get network flags
+        scan=$(scan_on)
+        connectable=$(connectable_on)
+
+        # If there is a connected network, place it at the top
+        if [ -n "$connected" ]; then
+            options="$connected\n$divider\n$networks\n$divider\n$power\n$connectable\n$scan\nExit"
+        else
+            options="$networks\n$divider\n$power\n$connectable\n$scan\nExit"
+        fi
+    else
+        power="Power: off"
+        options="$power\nExit"
+    fi
+
+    # Open rofi menu, read chosen option
+    chosen="$(echo -e "$options" | $rofi_command "Wi-Fi")"
+
+    # Match chosen option to command
+    case "$chosen" in
+        "" | "$divider")
+            echo "No option chosen."
+            ;;
+        "$power")
+            toggle_power
+            ;;
+        "$scan")
+            toggle_scan
+            ;;
+	"$connectable")
+	    toggle_connectable
+	    ;;
+	"$connected")
+	    network_menu "$connected_network"
+	    ;;
+        *)
+            network="$chosen"
+            # Open a submenu if a network is selected
+            if [[ $network ]]; then network_menu "$network"; fi
+            ;;
+    esac
+}
+
+# Rofi command to pipe into, can add any options here
+rofi_command="rofi -dmenu $* -p"
+
+case "$1" in
+    --status)
+        print_status
+        ;;
+    *)
+        show_menu
+        ;;
+esac
+
