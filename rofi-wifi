@@ -148,14 +148,6 @@ network_menu() {
         "$goback")
             show_menu
             ;;
-	*)
-            if [ "$is_secure" == "yes" ]; then
-                prompt_for_password "$network"
-            else
-                iwctl station wlan0 connect "$network"
-                show_menu
-            fi
-            ;;
     esac
 }
 
